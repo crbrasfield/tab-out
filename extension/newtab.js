@@ -59,7 +59,10 @@ window.addEventListener('message', async (event) => {
 
     } else if (action === 'closeTabs') {
       // Dashboard sends urls flat: { action, messageId, urls: [...] }
-      response = await handleCloseTabs({ urls: msg.urls });
+      // If exact: true, match by exact URL instead of hostname
+      response = msg.exact
+        ? await handleCloseTabsExact(msg.urls)
+        : await handleCloseTabs({ urls: msg.urls });
 
     } else if (action === 'focusTabs') {
       // Dashboard sends urls as an array; we focus the first match
@@ -310,4 +313,22 @@ async function handleCloseTabOutDupes() {
   }
 
   return { closedCount: toClose.length };
+}
+
+/**
+ * closeTabsExact — Closes tabs matching exact URLs (not by hostname).
+ * Used for landing pages so closing "Gmail inbox" doesn't also close
+ * individual email threads on the same domain.
+ */
+async function handleCloseTabsExact(urls = []) {
+  const urlSet = new Set(urls);
+  const allTabs = await chrome.tabs.query({});
+  const matchingIds = allTabs
+    .filter(tab => urlSet.has(tab.url))
+    .map(tab => tab.id);
+
+  if (matchingIds.length > 0) {
+    await chrome.tabs.remove(matchingIds);
+  }
+  return { closedCount: matchingIds.length };
 }

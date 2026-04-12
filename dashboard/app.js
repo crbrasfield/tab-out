@@ -1424,7 +1424,11 @@ document.addEventListener('click', async (e) => {
     if (!group) return;
 
     const urls = group.tabs.map(t => t.url);
-    await closeTabsByUrls(urls);
+    // Landing pages share domains with other tabs (e.g. Gmail inbox vs specific emails).
+    // Use exact URL matching so closing the inbox doesn't also close email threads.
+    const useExact = group.domain === '__landing-pages__';
+    await sendToExtension('closeTabs', { urls, exact: useExact });
+    await fetchOpenTabs();
 
     // Animate the card out
     if (card) {
