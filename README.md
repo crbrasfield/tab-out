@@ -8,18 +8,6 @@ Built for people who open too many tabs and never close them.
 
 ---
 
-## Install with a coding agent
-
-Send your coding agent (Claude Code, Cursor, Windsurf, etc.) this repo and say **"install this"**:
-
-```
-https://github.com/zarazhangrui/tab-out
-```
-
-The agent will explain what Tab Out does and set everything up. Takes about 2 minutes.
-
----
-
 ## Features
 
 - **See all your tabs at a glance** -- grouped by domain on a clean grid, no more squinting at 30 tiny tab titles
@@ -38,12 +26,12 @@ The agent will explain what Tab Out does and set everything up. Takes about 2 mi
 
 ## Manual Setup
 
-If you prefer to set things up yourself instead of using a coding agent:
+Set up the project locally:
 
 **1. Clone and install**
 
 ```bash
-git clone https://github.com/zarazhangrui/tab-out.git
+git clone https://github.com/crbrasfield/tab-out.git
 cd tab-out
 npm install
 ```
@@ -114,7 +102,3 @@ The server runs silently in the background. It starts on login and restarts if i
 ## License
 
 MIT
-
----
-
-Built by [Zara](https://x.com/zarazhangrui)
