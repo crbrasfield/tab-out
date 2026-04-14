@@ -8,9 +8,10 @@ You're installing **Tab Out** for the user. Your job is not just to set it up --
 
 Before doing anything technical, tell the user what they're about to get. Say something like:
 
-> **Tab Out** replaces your new tab page with a clean dashboard for saving tabs for later. It starts as a checklist, keeps archived items nearby, and stays local to your machine.
+> **Tab Out** replaces your new tab page with a clean dashboard for organizing sections, shortcut links, and saved tabs for later. It stays local to your machine.
 >
 > Here's what makes it great:
+> - **Sections + shortcuts** -- create named groups and stack shortcut links vertically inside each one
 > - **Save for later** -- bookmark individual tabs to a checklist before closing them
 > - **Active checklist + archive** -- keep current items on screen and tuck older ones away for later
 > - **100% local** -- your browsing data never leaves your machine. No AI, no external API calls.
@@ -103,10 +104,12 @@ Once the dashboard loads, walk them through the experience:
 
 > You're all set! Here's how to use Tab Out:
 >
-> 1. **Open a new tab** -- you'll see your saved-for-later checklist.
-> 2. **Save individual tabs for later** by clicking the bookmark icon before closing them.
-> 3. **Check items off** or dismiss them as you work through your list.
-> 4. **Open the archive** when you want to look back at older saved tabs.
+> 1. **Open a new tab** -- you'll see your sections board and saved-for-later checklist.
+> 2. **Create a section** and use the shortcut form inside it to add links.
+> 3. **Rename or delete a section** inline if your organization changes.
+> 4. **Save individual tabs for later** by clicking the bookmark icon before closing them.
+> 5. **Check items off** or dismiss them as you work through your list.
+> 6. **Open the archive** when you want to look back at older saved tabs.
 >
 > The server runs automatically in the background -- you never need to start it again. Every new tab is now your dashboard.
 

@@ -2,14 +2,15 @@
 
 **Keep tabs on your tabs.**
 
-Tab Out replaces your Chrome new tab page with a lightweight dashboard for saving tabs for later. It starts as a clean checklist, shows archived items, and stays local to your machine.
+Tab Out replaces your Chrome new tab page with a lightweight dashboard for sections, shortcut links, and saving tabs for later. It stays local to your machine.
 
-Built for people who want a simple, local place to park things they want to revisit.
+Built for people who want a simple, local place to organize links and park things they want to revisit.
 
 ---
 
 ## Features
 
+- **Sections + shortcuts** -- create named groups and stack shortcut links vertically inside each one
 - **Save for later** -- bookmark individual tabs to a checklist before closing them
 - **Active checklist + archive** -- keep a short list of current items and browse older saved tabs later
 - **100% local** -- your browsing data never leaves your machine. No AI, no external API calls
@@ -69,7 +70,7 @@ Config lives at `~/.mission-control/config.json`:
 ```
 You open a new tab
   -> Chrome extension loads Tab Out in an iframe
-  -> Dashboard shows your saved-for-later checklist
+  -> Dashboard shows your sections and saved-for-later checklist
   -> You archive or dismiss items as you work through them
   -> Repeat
 ```

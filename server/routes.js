@@ -18,7 +18,6 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 const express  = require('express');
-const path      = require('path');
 
 // Pull in the database prepared statements we need
 const {
@@ -35,11 +34,55 @@ const {
   dismissDeferred,
   ageOutDeferred,
   searchDeferredArchived,
+  getSections,
+  getSectionById,
+  getShortcutsBySection,
+  insertSection,
+  updateSectionName,
+  deleteSection,
+  insertShortcut,
+  updateShortcut,
+  deleteShortcut,
 } = require('./db');
 
 // An Express Router is like a mini-app: it holds a group of related routes.
 // We export it and mount it on the main Express app in index.js.
 const router = express.Router();
+
+function normalizeUrl(url) {
+  if (!url) return null;
+  const trimmed = String(url).trim();
+  if (!trimmed) return null;
+  try {
+    return new URL(trimmed).toString();
+  } catch {
+    try {
+      return new URL(`https://${trimmed}`).toString();
+    } catch {
+      return null;
+    }
+  }
+}
+
+function faviconForUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return `https://www.google.com/s2/favicons?domain=${parsed.hostname}&sz=32`;
+  } catch {
+    return null;
+  }
+}
+
+function serializeSection(section) {
+  if (!section) return null;
+  return {
+    ...section,
+    shortcuts: getShortcutsBySection.all({ section_id: section.id }).map(shortcut => ({
+      ...shortcut,
+      favicon_url: shortcut.favicon_url || faviconForUrl(shortcut.url),
+    })),
+  };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/missions
@@ -222,6 +265,161 @@ router.get('/stats', (req, res) => {
   } catch (err) {
     console.error('[routes] GET /stats failed:', err.message);
     res.status(500).json({ error: 'Failed to fetch stats' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/sections
+//
+// Returns all sections with their shortcut rows attached.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/sections', (req, res) => {
+  try {
+    const sections = getSections.all().map(serializeSection);
+    res.json({ sections });
+  } catch (err) {
+    console.error('[routes] GET /sections failed:', err.message);
+    res.status(500).json({ error: 'Failed to fetch sections' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/sections
+//
+// Create a new section.
+// Expects: { name }
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/sections', (req, res) => {
+  try {
+    const name = (req.body.name || '').trim() || 'Untitled section';
+    const result = insertSection.run({ name });
+    const section = getSectionById.get({ id: result.lastInsertRowid });
+    if (!section) {
+      return res.status(500).json({ error: 'Failed to create section' });
+    }
+    res.json({ success: true, section: serializeSection(section) });
+  } catch (err) {
+    console.error('[routes] POST /sections failed:', err.message);
+    res.status(500).json({ error: 'Failed to create section' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/sections/:id
+//
+// Rename a section.
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch('/sections/:id', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid section ID' });
+    const name = (req.body.name || '').trim();
+    if (!name) return res.status(400).json({ error: 'Section name is required' });
+
+    const result = updateSectionName.run({ id, name });
+    if (!result.changes) return res.status(404).json({ error: 'Section not found' });
+    const section = getSectionById.get({ id });
+    if (!section) return res.status(404).json({ error: 'Section not found' });
+    res.json({ success: true, section: serializeSection(section) });
+  } catch (err) {
+    console.error('[routes] PATCH /sections/:id failed:', err.message);
+    res.status(500).json({ error: 'Failed to update section' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/sections/:id
+//
+// Delete a section and its shortcuts.
+// ─────────────────────────────────────────────────────────────────────────────
+router.delete('/sections/:id', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid section ID' });
+
+    const result = deleteSection.run({ id });
+    if (!result.changes) return res.status(404).json({ error: 'Section not found' });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[routes] DELETE /sections/:id failed:', err.message);
+    res.status(500).json({ error: 'Failed to delete section' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/sections/:id/shortcuts
+//
+// Add a new shortcut to a section.
+// Expects: { name?, url }
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/sections/:id/shortcuts', (req, res) => {
+  try {
+    const sectionId = Number(req.params.id);
+    if (!sectionId) return res.status(400).json({ error: 'Invalid section ID' });
+
+    const url = normalizeUrl(req.body.url);
+    if (!url) return res.status(400).json({ error: 'A valid URL is required' });
+
+    const name = (req.body.name || '').trim() || null;
+    const favicon_url = faviconForUrl(url);
+    const result = insertShortcut.run({ section_id: sectionId, name, url, favicon_url });
+
+    res.json({
+      success: true,
+      shortcut: {
+        id: result.lastInsertRowid,
+        section_id: sectionId,
+        name,
+        url,
+        favicon_url,
+      },
+    });
+  } catch (err) {
+    console.error('[routes] POST /sections/:id/shortcuts failed:', err.message);
+    res.status(500).json({ error: 'Failed to add shortcut' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/shortcuts/:id
+//
+// Update a shortcut's name and/or URL.
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch('/shortcuts/:id', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid shortcut ID' });
+
+    const url = normalizeUrl(req.body.url);
+    if (!url) return res.status(400).json({ error: 'A valid URL is required' });
+
+    const name = (req.body.name || '').trim() || null;
+    const favicon_url = faviconForUrl(url);
+    const result = updateShortcut.run({ id, name, url, favicon_url });
+    if (!result.changes) return res.status(404).json({ error: 'Shortcut not found' });
+    res.json({ success: true, shortcut: { id, name, url, favicon_url } });
+  } catch (err) {
+    console.error('[routes] PATCH /shortcuts/:id failed:', err.message);
+    res.status(500).json({ error: 'Failed to update shortcut' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/shortcuts/:id
+//
+// Delete one shortcut.
+// ─────────────────────────────────────────────────────────────────────────────
+router.delete('/shortcuts/:id', (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!id) return res.status(400).json({ error: 'Invalid shortcut ID' });
+
+    const result = deleteShortcut.run({ id });
+    if (!result.changes) return res.status(404).json({ error: 'Shortcut not found' });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[routes] DELETE /shortcuts/:id failed:', err.message);
+    res.status(500).json({ error: 'Failed to delete shortcut' });
   }
 });
 

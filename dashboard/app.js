@@ -259,6 +259,100 @@ function showToast(message) {
   setTimeout(() => toast.classList.remove('visible'), 2500);
 }
 
+// Sections + shortcuts state
+let sections = [];
+
+function faviconForUrl(url) {
+  try {
+    const parsed = new URL(url);
+    return `https://www.google.com/s2/favicons?domain=${parsed.hostname}&sz=32`;
+  } catch {
+    return '';
+  }
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+async function fetchSections() {
+  try {
+    const res = await fetch('/api/sections');
+    if (!res.ok) throw new Error('Failed to fetch sections');
+    const data = await res.json();
+    sections = data.sections || [];
+  } catch (err) {
+    console.warn('[tab-out] Could not load sections:', err);
+    sections = [];
+  }
+}
+
+function renderShortcut(shortcut) {
+  const url = shortcut.url || '';
+  const name = (shortcut.name || '').trim();
+  const favicon = shortcut.favicon_url || faviconForUrl(url);
+  const title = url || name || '';
+  const label = name ? `<span class="shortcut-label">${escapeHtml(name)}</span>` : '';
+  const nameOnlyClass = name ? '' : ' shortcut-name-only';
+
+  return `
+    <div class="shortcut-item" data-shortcut-id="${shortcut.id}">
+      <a class="shortcut-link${nameOnlyClass}" href="${escapeHtml(url)}" target="_blank" rel="noopener" title="${escapeHtml(title)}">
+        ${favicon ? `<img class="shortcut-favicon" src="${favicon}" alt="" onerror="this.style.display='none'">` : ''}
+        ${label}
+      </a>
+      <button class="shortcut-delete-btn" data-action="delete-shortcut" data-shortcut-id="${shortcut.id}" title="Delete shortcut">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+      </button>
+    </div>`;
+}
+
+function renderSectionCard(section) {
+  const shortcuts = section.shortcuts || [];
+  return `
+    <div class="section-card" data-section-id="${section.id}">
+      <div class="section-card-header">
+        <input class="section-name-input" data-action="rename-section" data-section-id="${section.id}" value="${escapeHtml(section.name || '')}" aria-label="Section name">
+        <button class="section-delete-btn" data-action="delete-section" data-section-id="${section.id}" title="Delete section">
+          Delete
+        </button>
+      </div>
+
+      <div class="section-shortcuts">
+        ${shortcuts.length > 0
+          ? shortcuts.map(renderShortcut).join('')
+          : `<div class="sections-empty" style="padding:4px 0 0;">No shortcuts yet.</div>`}
+      </div>
+
+      <form class="shortcut-create-form" data-action="create-shortcut" data-section-id="${section.id}">
+        <input type="text" name="name" placeholder="Shortcut name (optional)" maxlength="120">
+        <input type="text" name="url" placeholder="https://example.com" required>
+        <button type="submit" class="shortcut-add-btn">Add shortcut</button>
+      </form>
+    </div>`;
+}
+
+async function renderSectionsBoard() {
+  const list = document.getElementById('sectionsList');
+  const empty = document.getElementById('sectionsEmpty');
+  if (!list || !empty) return;
+
+  await fetchSections();
+  if (sections.length === 0) {
+    list.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+
+  empty.style.display = 'none';
+  list.innerHTML = sections.map(renderSectionCard).join('');
+}
+
 /**
  * timeAgo(dateStr)
  *
@@ -735,7 +829,8 @@ function renderArchiveItem(item) {
  *
  * The main view. Loads instantly:
  * 1. Paint greeting + date
- * 2. Render the saved-for-later column
+ * 2. Render sections
+ * 3. Render the saved-for-later column
  */
 async function renderStaticDashboard() {
   // --- Header: greeting + date ---
@@ -744,7 +839,7 @@ async function renderStaticDashboard() {
   if (greetingEl) greetingEl.textContent = getGreeting();
   if (dateEl)     dateEl.textContent     = getDateDisplay();
 
-  // Render the "Saved for Later" checklist column
+  await renderSectionsBoard();
   await renderDeferredColumn();
 }
 
@@ -775,6 +870,40 @@ document.addEventListener('click', async (e) => {
   if (!actionEl) return;
 
   const action = actionEl.dataset.action;
+
+  if (action === 'delete-section') {
+    const sectionId = actionEl.dataset.sectionId;
+    if (!sectionId) return;
+    if (!confirm('Delete this section and all of its shortcuts?')) return;
+
+    try {
+      const res = await fetch(`/api/sections/${sectionId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete section');
+      await renderSectionsBoard();
+      showToast('Section deleted');
+    } catch (err) {
+      console.error('[tab-out] Failed to delete section:', err);
+      showToast('Could not delete section');
+    }
+    return;
+  }
+
+  if (action === 'delete-shortcut') {
+    const shortcutId = actionEl.dataset.shortcutId;
+    if (!shortcutId) return;
+    if (!confirm('Delete this shortcut?')) return;
+
+    try {
+      const res = await fetch(`/api/shortcuts/${shortcutId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to delete shortcut');
+      await renderSectionsBoard();
+      showToast('Shortcut deleted');
+    } catch (err) {
+      console.error('[tab-out] Failed to delete shortcut:', err);
+      showToast('Could not delete shortcut');
+    }
+    return;
+  }
 
   // ---- defer-single-tab: save one tab for later, then close it ----
   if (action === 'defer-single-tab') {
@@ -859,6 +988,85 @@ document.addEventListener('click', async (e) => {
     }
     return;
   }
+});
+
+document.addEventListener('submit', async (e) => {
+  const sectionForm = e.target.closest('#sectionCreateForm');
+  if (sectionForm) {
+    e.preventDefault();
+    const input = document.getElementById('sectionCreateName');
+    const name = input ? input.value.trim() : '';
+
+    try {
+      const res = await fetch('/api/sections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) throw new Error('Failed to create section');
+      if (input) input.value = '';
+      await renderSectionsBoard();
+      showToast('Section created');
+    } catch (err) {
+      console.error('[tab-out] Failed to create section:', err);
+      showToast('Could not create section');
+    }
+    return;
+  }
+
+  const shortcutForm = e.target.closest('.shortcut-create-form');
+  if (shortcutForm) {
+    e.preventDefault();
+    const sectionId = shortcutForm.dataset.sectionId;
+    const formData = new FormData(shortcutForm);
+    const name = (formData.get('name') || '').toString().trim();
+    const url = (formData.get('url') || '').toString().trim();
+
+    try {
+      const res = await fetch(`/api/sections/${sectionId}/shortcuts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, url }),
+      });
+      if (!res.ok) throw new Error('Failed to add shortcut');
+      shortcutForm.reset();
+      await renderSectionsBoard();
+      showToast('Shortcut added');
+    } catch (err) {
+      console.error('[tab-out] Failed to add shortcut:', err);
+      showToast('Could not add shortcut');
+    }
+  }
+});
+
+document.addEventListener('change', async (e) => {
+  const input = e.target.closest('.section-name-input');
+  if (!input) return;
+
+  const sectionId = input.dataset.sectionId;
+  const name = input.value.trim();
+  if (!sectionId) return;
+
+  try {
+    const res = await fetch(`/api/sections/${sectionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    if (!res.ok) throw new Error('Failed to rename section');
+    await renderSectionsBoard();
+  } catch (err) {
+    console.error('[tab-out] Failed to rename section:', err);
+    showToast('Could not rename section');
+    await renderSectionsBoard();
+  }
+});
+
+document.addEventListener('keydown', (e) => {
+  const input = e.target.closest('.section-name-input');
+  if (!input || e.key !== 'Enter') return;
+  e.preventDefault();
+  input.blur();
 });
 
 // ---- Archive toggle — expand/collapse the archive section ----

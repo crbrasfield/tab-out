@@ -48,6 +48,7 @@ const db = new Database(DB_PATH);
 // reads can still see the old data, and they get merged together later.
 // ─────────────────────────────────────────────────────────────────────────────
 db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Schema creation
@@ -141,6 +142,32 @@ db.exec(`
     dismissed      INTEGER NOT NULL DEFAULT 0,
     archived       INTEGER NOT NULL DEFAULT 0,
     archived_at    TEXT
+  );
+
+  -- ──────────────────────────────────────────────────────────────────────────
+  -- sections table
+  -- Named groups shown on the dashboard. Each section can contain many
+  -- shortcut links.
+  -- ──────────────────────────────────────────────────────────────────────────
+  CREATE TABLE IF NOT EXISTS sections (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT    NOT NULL,
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+  );
+
+  -- ──────────────────────────────────────────────────────────────────────────
+  -- shortcuts table
+  -- Individual shortcut links that belong to a section.
+  -- ──────────────────────────────────────────────────────────────────────────
+  CREATE TABLE IF NOT EXISTS shortcuts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    section_id  INTEGER NOT NULL REFERENCES sections(id) ON DELETE CASCADE,
+    name        TEXT,
+    url         TEXT    NOT NULL,
+    favicon_url TEXT,
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
   );
 `);
 
@@ -366,6 +393,63 @@ const searchDeferredArchived = db.prepare(`
   LIMIT 50
 `);
 
+// ── SECTION QUERIES ──────────────────────────────────────────────────────────
+
+const getSections = db.prepare(`
+  SELECT *
+  FROM   sections
+  ORDER BY created_at ASC, id ASC
+`);
+
+const getSectionById = db.prepare(`
+  SELECT *
+  FROM   sections
+  WHERE  id = :id
+`);
+
+const getShortcutsBySection = db.prepare(`
+  SELECT *
+  FROM   shortcuts
+  WHERE  section_id = :section_id
+  ORDER BY created_at ASC, id ASC
+`);
+
+const insertSection = db.prepare(`
+  INSERT INTO sections (name)
+  VALUES (:name)
+`);
+
+const updateSectionName = db.prepare(`
+  UPDATE sections
+  SET    name = :name,
+         updated_at = datetime('now')
+  WHERE  id = :id
+`);
+
+const deleteSection = db.prepare(`
+  DELETE FROM sections
+  WHERE id = :id
+`);
+
+const insertShortcut = db.prepare(`
+  INSERT INTO shortcuts (section_id, name, url, favicon_url)
+  VALUES (:section_id, :name, :url, :favicon_url)
+`);
+
+const updateShortcut = db.prepare(`
+  UPDATE shortcuts
+  SET    name = :name,
+         url = :url,
+         favicon_url = :favicon_url,
+         updated_at = datetime('now')
+  WHERE  id = :id
+`);
+
+const deleteShortcut = db.prepare(`
+  DELETE FROM shortcuts
+  WHERE id = :id
+`);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // clearAllMissions — function helper
 //
@@ -425,4 +509,13 @@ module.exports = {
   dismissDeferred,      // ({ id }) → marks as dismissed + archived
   ageOutDeferred,       // () → archives tabs older than 30 days
   searchDeferredArchived, // ({ q }) → search archived by title/url
+  getSections,          // () → array of sections
+  getSectionById,       // ({ id }) → section row or undefined
+  getShortcutsBySection, // ({ section_id }) → array of shortcuts for a section
+  insertSection,        // ({ name })
+  updateSectionName,    // ({ id, name })
+  deleteSection,        // ({ id })
+  insertShortcut,       // ({ section_id, name, url, favicon_url })
+  updateShortcut,       // ({ id, name, url, favicon_url })
+  deleteShortcut,       // ({ id })
 };

@@ -210,6 +210,191 @@ header {
   white-space: nowrap;
 }
 
+/* ---- Sections Board ---- */
+.dashboard-columns {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.sections-board {
+  background: rgba(255, 253, 249, 0.72);
+  border: 1px solid rgba(232, 226, 218, 0.9);
+  border-radius: 14px;
+  padding: 20px;
+  box-shadow: 0 8px 30px rgba(26, 22, 19, 0.04);
+}
+
+.sections-board-header {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.section-create-form,
+.shortcut-create-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 10px;
+}
+
+.section-create-form {
+  grid-template-columns: 1fr auto;
+}
+
+.section-create-form input,
+.shortcut-create-form input,
+.section-name-input {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--warm-gray);
+  border-radius: 8px;
+  padding: 10px 12px;
+  outline: none;
+  min-width: 0;
+}
+
+.section-create-form input:focus,
+.shortcut-create-form input:focus,
+.section-name-input:focus {
+  border-color: var(--accent-amber);
+  box-shadow: 0 0 0 3px rgba(200, 113, 58, 0.08);
+}
+
+.create-btn,
+.shortcut-add-btn,
+.shortcut-delete-btn,
+.section-delete-btn {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: transform 0.15s, opacity 0.15s, background 0.15s;
+}
+
+.create-btn,
+.shortcut-add-btn {
+  background: var(--accent-amber);
+  color: white;
+  padding: 10px 14px;
+}
+
+.create-btn:hover,
+.shortcut-add-btn:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.section-card {
+  background: var(--card-bg);
+  border: 1px solid var(--warm-gray);
+  border-radius: 12px;
+  padding: 16px;
+  margin-top: 16px;
+}
+
+.section-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.section-name-input {
+  flex: 1;
+  font-family: 'Newsreader', serif;
+  font-size: 22px;
+  font-style: italic;
+  font-weight: 400;
+  padding: 8px 10px;
+  background: transparent;
+}
+
+.section-delete-btn {
+  background: rgba(179, 90, 90, 0.1);
+  color: var(--accent-rose);
+  padding: 8px 10px;
+}
+
+.section-delete-btn:hover,
+.shortcut-delete-btn:hover {
+  background: rgba(179, 90, 90, 0.16);
+}
+
+.section-shortcuts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shortcut-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(232, 226, 218, 0.75);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.shortcut-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  text-decoration: none;
+  min-width: 0;
+  flex: 1;
+}
+
+.shortcut-link:hover {
+  color: var(--accent-amber);
+}
+
+.shortcut-favicon {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.shortcut-label {
+  font-size: 13px;
+  line-height: 1.4;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shortcut-name-only {
+  width: 100%;
+}
+
+.shortcut-delete-btn {
+  background: none;
+  color: var(--muted);
+  padding: 6px;
+  flex-shrink: 0;
+}
+
+.shortcut-create-form {
+  margin-top: 12px;
+}
+
+.sections-empty,
+.deferred-empty {
+  font-size: 13px;
+  color: var(--muted);
+  font-style: italic;
+  padding: 12px 0 4px;
+}
+
 /* ---- Mission Cards ---- */
 .missions {
   display: grid;
@@ -897,6 +1082,21 @@ footer { animation: fadeUp 0.5s ease 0.65s both; }
     width: 100%;
     position: static;
     max-width: none;
+  }
+
+  .section-create-form,
+  .shortcut-create-form {
+    grid-template-columns: 1fr;
+  }
+
+  .create-btn,
+  .shortcut-add-btn {
+    width: 100%;
+  }
+
+  .section-card-header {
+    flex-direction: column;
+    align-items: stretch;
   }
 }
 
