@@ -7,10 +7,21 @@
 const { execSync } = require('child_process');
 const path = require('path');
 
-const REPO_URL = 'https://github.com/zarazhangrui/tab-out';
-const API_URL = 'https://api.github.com/repos/zarazhangrui/tab-out/commits/main';
 const CHECK_INTERVAL = 48 * 60 * 60 * 1000; // 48 hours
 const PROJECT_ROOT = path.resolve(__dirname, '..');
+
+function getRepoSlug() {
+  try {
+    const remoteUrl = execSync('git config --get remote.origin.url', { cwd: PROJECT_ROOT, encoding: 'utf8' }).trim();
+    const match = remoteUrl.match(/github\.com[:/](.+?)(?:\.git)?$/);
+    return match ? match[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+const repoSlug = getRepoSlug();
+const API_URL = repoSlug ? `https://api.github.com/repos/${repoSlug}/commits/main` : null;
 
 let status = {
   updateAvailable: false,
@@ -28,6 +39,8 @@ function getLocalCommit() {
 
 async function checkForUpdate() {
   try {
+    if (!API_URL) return;
+
     const localCommit = getLocalCommit();
     if (!localCommit) return;
 

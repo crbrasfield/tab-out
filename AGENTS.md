@@ -27,7 +27,7 @@ Before doing anything technical, tell the user what they're about to get. Say so
 ## Step 1 -- Clone and install
 
 ```bash
-git clone https://github.com/zarazhangrui/tab-out.git
+git clone https://github.com/crbrasfield/tab-out.git
 cd tab-out
 npm install
 ```
