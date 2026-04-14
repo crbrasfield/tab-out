@@ -2,23 +2,16 @@
 
 **Keep tabs on your tabs.**
 
-Tab Out replaces your Chrome new tab page with a dashboard that shows everything you have open -- grouped by domain, with landing pages (Gmail, X, LinkedIn, etc.) pulled into their own group for easy cleanup. Close tabs with a satisfying swoosh + confetti.
+Tab Out replaces your Chrome new tab page with a lightweight dashboard for saving tabs for later. It starts as a clean checklist, shows archived items, and stays local to your machine.
 
-Built for people who open too many tabs and never close them.
+Built for people who want a simple, local place to park things they want to revisit.
 
 ---
 
 ## Features
 
-- **See all your tabs at a glance** -- grouped by domain on a clean grid, no more squinting at 30 tiny tab titles
-- **Landing pages group** -- homepages and feeds (Gmail, X, LinkedIn, GitHub, YouTube) are pulled into one card so you can close them all at once
-- **Close tabs with style** -- swoosh sound + confetti burst when you clean up a group. Makes tab hygiene feel rewarding
-- **Duplicate detection** -- flags when you have the same page open twice, with one-click cleanup
-- **Click any tab to jump to it** -- switches to the existing tab, even across windows
 - **Save for later** -- bookmark individual tabs to a checklist before closing them
-- **Tab Out dupe detection** -- notices when you have extra new tab pages open and offers to close them
-- **Expandable groups** -- large groups show the first 8 tabs with a clickable "+N more" to reveal the rest
-- **Auto-updates** -- get notified when a new version is available, update with one click
+- **Active checklist + archive** -- keep a short list of current items and browse older saved tabs later
 - **100% local** -- your browsing data never leaves your machine. No AI, no external API calls
 - **Always on** -- starts automatically when you log in, runs silently in the background
 
@@ -76,9 +69,8 @@ Config lives at `~/.mission-control/config.json`:
 ```
 You open a new tab
   -> Chrome extension loads Tab Out in an iframe
-  -> Dashboard shows your open tabs grouped by domain
-  -> Landing pages (Gmail, X, LinkedIn, etc.) get their own group at the top
-  -> You close groups you're done with (swoosh + confetti)
+  -> Dashboard shows your saved-for-later checklist
+  -> You archive or dismiss items as you work through them
   -> Repeat
 ```
 

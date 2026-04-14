@@ -7,7 +7,6 @@
 const express = require('express');
 const path    = require('path');
 const config  = require('./config');
-const { startUpdateChecker } = require('./updater');
 
 const app = express();
 
@@ -40,5 +39,4 @@ app.use('/api', apiRouter);
 // Start the server
 app.listen(config.port, () => {
   console.log(`Tab Out running at http://localhost:${config.port}`);
-  startUpdateChecker();
 });

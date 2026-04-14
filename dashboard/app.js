@@ -2,10 +2,9 @@
    Tab Out — Dashboard App
 
    This file is the brain of the dashboard. It:
-   1. Talks to the Chrome extension (to read/close actual browser tabs)
-   2. Groups open tabs by domain with a landing pages category
-   3. Renders domain cards, banners, and stats
-   4. Handles all user actions (close tabs, save for later, focus)
+   1. Talks to the Chrome extension when needed for deferred-tab actions
+   2. Renders the saved-for-later checklist and archive
+   3. Handles checklist actions and archive interactions
    ================================================================ */
 
 'use strict';
@@ -25,9 +24,6 @@
 
 // Track whether the extension is actually available (set after first successful call)
 let extensionAvailable = false;
-
-// Track all open tabs fetched from the extension (array of tab objects)
-let openTabs = [];
 
 /**
  * sendToExtension(action, data)
@@ -70,48 +66,6 @@ function sendToExtension(action, data = {}) {
     window.parent.postMessage({ action, messageId, ...data }, '*');
   });
 }
-
-/**
- * fetchOpenTabs()
- *
- * Asks the extension for the list of currently open browser tabs.
- * Sets extensionAvailable = true if it works, false otherwise.
- */
-async function fetchOpenTabs() {
-  const result = await sendToExtension('getTabs');
-  if (result && result.success && Array.isArray(result.tabs)) {
-    openTabs = result.tabs;
-    extensionAvailable = true;
-  } else {
-    openTabs = [];
-    extensionAvailable = false;
-  }
-}
-
-/**
- * closeTabsByUrls(urls)
- *
- * Tells the extension to close all tabs matching the given URLs.
- * After closing, we re-fetch the tab list so our state stays accurate.
- */
-async function closeTabsByUrls(urls) {
-  if (!extensionAvailable || !urls || urls.length === 0) return;
-  await sendToExtension('closeTabs', { urls });
-  // Refresh our local tab list to reflect what was closed
-  await fetchOpenTabs();
-}
-
-/**
- * focusTabsByUrls(urls)
- *
- * Tells the extension to bring the first matching tab into focus
- * (switch to that tab in Chrome). Used by the "Focus on this" button.
- */
-async function focusTabsByUrls(urls) {
-  if (!extensionAvailable || !urls || urls.length === 0) return;
-  await sendToExtension('focusTabs', { urls });
-}
-
 
 /* ----------------------------------------------------------------
    UI HELPERS
@@ -306,41 +260,6 @@ function showToast(message) {
 }
 
 /**
- * checkAndShowEmptyState()
- *
- * Called after each card is removed from the DOM. If all mission cards
- * are gone (the grid is empty), we swap in a fun empty state instead of
- * showing a blank, lifeless grid.
- *
- */
-function checkAndShowEmptyState() {
-
-  const missionsEl = document.getElementById('openTabsMissions');
-  if (!missionsEl) return;
-
-  // Count remaining mission cards (excludes anything already animating out)
-  const remaining = missionsEl.querySelectorAll('.mission-card:not(.closing)').length;
-  if (remaining > 0) return;
-
-  // All missions are gone — show the empty state
-  missionsEl.innerHTML = `
-    <div class="missions-empty-state">
-      <div class="empty-checkmark">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-        </svg>
-      </div>
-      <div class="empty-title">Inbox zero, but for tabs.</div>
-      <div class="empty-subtitle">You're free.</div>
-    </div>
-  `;
-
-  // Update the section count to reflect the clear state
-  const countEl = document.getElementById('openTabsSectionCount');
-  if (countEl) countEl.textContent = '0 missions';
-}
-
-/**
  * timeAgo(dateStr)
  *
  * Converts an ISO date string into a human-friendly relative time.
@@ -390,51 +309,6 @@ function getDateDisplay() {
     day: 'numeric'
   });
 }
-
-/**
- * countOpenTabsForMission(missionUrls)
- *
- * Counts how many of the user's currently open browser tabs
- * match any of the URLs associated with a mission.
- *
- * We match by domain (hostname) rather than exact URL, because
- * the exact URL often changes (e.g. page IDs, session tokens).
- */
-function countOpenTabsForMission(missionUrls) {
-  return getOpenTabsForMission(missionUrls).length;
-}
-
-/**
- * getOpenTabsForMission(missionUrls)
- *
- * Returns the actual tab objects from openTabs that match
- * any URL in the mission's URL list (matched by domain).
- */
-function getOpenTabsForMission(missionUrls) {
-  if (!missionUrls || missionUrls.length === 0 || openTabs.length === 0) return [];
-
-  // Extract the domains from the mission's saved URLs
-  // missionUrls can be either URL strings or objects with a .url property
-  const missionDomains = missionUrls.map(item => {
-    const urlStr = (typeof item === 'string') ? item : (item.url || '');
-    try {
-      return new URL(urlStr.startsWith('http') ? urlStr : 'https://' + urlStr).hostname;
-    } catch {
-      return urlStr;
-    }
-  });
-
-  // Find open tabs whose hostname matches any mission domain
-  return openTabs.filter(tab => {
-    try {
-      const tabDomain = new URL(tab.url).hostname;
-      return missionDomains.some(d => tabDomain.includes(d) || d.includes(tabDomain));
-    } catch {
-      return false;
-    }
-  });
-}
-
 
 /* ----------------------------------------------------------------
    SVG ICON STRINGS
@@ -731,229 +605,6 @@ const ICONS = {
    ---------------------------------------------------------------- */
 
 /* ----------------------------------------------------------------
-   IN-MEMORY STORE FOR OPEN-TAB GROUPS
-
-   domainGroups is populated by renderStaticDashboard().
-   ---------------------------------------------------------------- */
-let domainGroups    = [];
-let duplicateTabs   = [];
-
-
-/* ----------------------------------------------------------------
-   HELPER: filter out browser-internal pages
-   We call this in multiple places, so it lives in one spot.
-   ---------------------------------------------------------------- */
-
-/**
- * getRealTabs()
- *
- * Returns all open tabs that are real web pages — no chrome://, extension
- * pages, about:blank, etc. We only want to show and manage actual websites.
- */
-function getRealTabs() {
-  return openTabs.filter(t => {
-    const url = t.url || '';
-    return (
-      !url.startsWith('chrome://') &&
-      !url.startsWith('chrome-extension://') &&
-      !url.startsWith('about:') &&
-      !url.startsWith('edge://') &&
-      !url.startsWith('brave://')
-    );
-  });
-}
-
-/**
- * checkTabOutDupes()
- *
- * Counts how many Tab Out new-tab pages are open (they show up as
- * chrome-extension://XXXXX/newtab.html in the tab list). If more than 1,
- * shows a banner offering to close the extras.
- */
-function checkTabOutDupes() {
-  // Each tab has an isTabOut flag set by the extension's handleGetTabs()
-  const tabOutTabs = openTabs.filter(t => t.isTabOut);
-
-  const banner  = document.getElementById('tabOutDupeBanner');
-  const countEl = document.getElementById('tabOutDupeCount');
-  if (!banner) return;
-
-  if (tabOutTabs.length > 1) {
-    if (countEl) countEl.textContent = tabOutTabs.length;
-    banner.style.display = 'flex';
-  } else {
-    banner.style.display = 'none';
-  }
-}
-
-
-/* ----------------------------------------------------------------
-   DOMAIN CARD RENDERER (for static default view)
-
-   Groups open tabs by domain (e.g. all github.com tabs together)
-   and renders a card per domain.
-   ---------------------------------------------------------------- */
-
-/**
- * buildOverflowChips(hiddenTabs, urlCounts)
- *
- * Builds the expandable "+N more" section for tab lists that exceed 8 items.
- * Returns HTML string with hidden chips and a clickable expand button.
- * Used by domain cards when there are more than 8 tabs.
- */
-function buildOverflowChips(hiddenTabs, urlCounts = {}) {
-  const hiddenChips = hiddenTabs.map(tab => {
-    const label   = cleanTitle(smartTitle(stripTitleNoise(tab.title || ''), tab.url), '');
-    const count   = urlCounts[tab.url] || 1;
-    const dupeTag = count > 1 ? ` <span class="chip-dupe-badge">(${count}x)</span>` : '';
-    const chipClass = count > 1 ? ' chip-has-dupes' : '';
-    const safeUrl = (tab.url || '').replace(/"/g, '&quot;');
-    const safeTitle = label.replace(/"/g, '&quot;');
-    let domain = '';
-    try { domain = new URL(tab.url).hostname; } catch {}
-    const faviconUrl = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=16` : '';
-    return `<div class="page-chip clickable${chipClass}" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
-      ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" onerror="this.style.display='none'">` : ''}
-      <span class="chip-text">${label}</span>${dupeTag}
-      <div class="chip-actions">
-        <button class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" title="Save for later">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" /></svg>
-        </button>
-        <button class="chip-action chip-close" data-action="close-single-tab" data-tab-url="${safeUrl}" title="Close this tab">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
-        </button>
-      </div>
-    </div>`;
-  }).join('');
-
-  return `
-    <div class="page-chips-overflow" style="display:none">${hiddenChips}</div>
-    <div class="page-chip page-chip-overflow clickable" data-action="expand-chips">
-      <span class="chip-text">+${hiddenTabs.length} more</span>
-    </div>`;
-}
-
-/**
- * renderDomainCard(group, groupIndex)
- *
- * Builds the HTML for one domain group card in the static view.
- * "group" is: { domain, tabs: [{ url, title, tabId }] }
- *
- * Visually similar to renderOpenTabsMissionCard() but with a neutral
- * gray status bar (amber if duplicates exist).
- */
-function renderDomainCard(group, groupIndex) {
-  const tabs      = group.tabs || [];
-  const tabCount  = tabs.length;
-  const isLanding = group.domain === '__landing-pages__';
-  const stableId  = 'domain-' + group.domain.replace(/[^a-z0-9]/g, '-');
-
-  // Detect duplicates within this domain group (exact URL match)
-  const urlCounts = {};
-  for (const tab of tabs) {
-    urlCounts[tab.url] = (urlCounts[tab.url] || 0) + 1;
-  }
-  const dupeUrls = Object.entries(urlCounts).filter(([, c]) => c > 1);
-  const hasDupes = dupeUrls.length > 0;
-  const totalExtras = dupeUrls.reduce((s, [, c]) => s + c - 1, 0);
-
-  // Tab count badge
-  const tabBadge = `<span class="open-tabs-badge">
-    ${ICONS.tabs}
-    ${tabCount} tab${tabCount !== 1 ? 's' : ''} open
-  </span>`;
-
-  // Duplicate warning badge
-  const dupeBadge = hasDupes
-    ? `<span class="open-tabs-badge" style="color: var(--accent-amber); background: rgba(200, 113, 58, 0.08);">
-        ${totalExtras} duplicate${totalExtras !== 1 ? 's' : ''}
-      </span>`
-    : '';
-
-  // Deduplicate for display: show each URL once with (Nx) badge if duplicated
-  const seen = new Set();
-  const uniqueTabs = [];
-  for (const tab of tabs) {
-    if (!seen.has(tab.url)) {
-      seen.add(tab.url);
-      uniqueTabs.push(tab);
-    }
-  }
-  const visibleTabs = uniqueTabs.slice(0, 8);
-  const extraCount  = uniqueTabs.length - visibleTabs.length;
-  const pageChips = visibleTabs.map(tab => {
-    let label = cleanTitle(smartTitle(stripTitleNoise(tab.title || ''), tab.url), group.domain);
-    // For localhost tabs, prepend the port number so you can tell projects apart
-    try {
-      const parsed = new URL(tab.url);
-      if (parsed.hostname === 'localhost' && parsed.port) {
-        label = `${parsed.port} ${label}`;
-      }
-    } catch {}
-    const count   = urlCounts[tab.url];
-    const dupeTag = count > 1
-      ? ` <span class="chip-dupe-badge">(${count}x)</span>`
-      : '';
-    const chipClass = count > 1 ? ' chip-has-dupes' : '';
-    const safeUrl = (tab.url || '').replace(/"/g, '&quot;');
-    const safeTitle = label.replace(/"/g, '&quot;');
-    let domain = '';
-    try { domain = new URL(tab.url).hostname; } catch {}
-    const faviconUrl = domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=16` : '';
-    return `<div class="page-chip clickable${chipClass}" data-action="focus-tab" data-tab-url="${safeUrl}" title="${safeTitle}">
-      ${faviconUrl ? `<img class="chip-favicon" src="${faviconUrl}" alt="" onerror="this.style.display='none'">` : ''}
-      <span class="chip-text">${label}</span>${dupeTag}
-      <div class="chip-actions">
-        <button class="chip-action chip-save" data-action="defer-single-tab" data-tab-url="${safeUrl}" data-tab-title="${safeTitle}" title="Save for later">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" /></svg>
-        </button>
-        <button class="chip-action chip-close" data-action="close-single-tab" data-tab-url="${safeUrl}" title="Close this tab">
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
-        </button>
-      </div>
-    </div>`;
-  }).join('') + (extraCount > 0 ? buildOverflowChips(uniqueTabs.slice(8), urlCounts) : '');
-
-  // Use amber status bar if there are duplicates
-  const statusBarClass = hasDupes ? 'active' : 'neutral';
-  const statusBarStyle = hasDupes ? ' style="background: var(--accent-amber);"' : '';
-
-  // Actions: always show save all + close all, add "Close duplicates" if dupes exist
-  let actionsHtml = `
-    <button class="action-btn close-tabs" data-action="close-domain-tabs" data-domain-id="${stableId}">
-      ${ICONS.close}
-      Close all ${tabCount} tab${tabCount !== 1 ? 's' : ''}
-    </button>`;
-
-  if (hasDupes) {
-    const dupeUrlsEncoded = dupeUrls.map(([url]) => encodeURIComponent(url)).join(',');
-    actionsHtml += `
-      <button class="action-btn" data-action="dedup-keep-one" data-dupe-urls="${dupeUrlsEncoded}">
-        Close ${totalExtras} duplicate${totalExtras !== 1 ? 's' : ''}
-      </button>`;
-  }
-
-  return `
-    <div class="mission-card domain-card ${hasDupes ? 'has-amber-bar' : 'has-neutral-bar'}" data-domain-id="${stableId}">
-      <div class="status-bar"${statusBarStyle}></div>
-      <div class="mission-content">
-        <div class="mission-top">
-          <span class="mission-name">${isLanding ? 'Homepages' : friendlyDomain(group.domain)}</span>
-          ${tabBadge}
-          ${dupeBadge}
-        </div>
-        <div class="mission-pages">${pageChips}</div>
-        <div class="actions">${actionsHtml}</div>
-      </div>
-      <div class="mission-meta">
-        <div class="mission-page-count">${tabCount}</div>
-        <div class="mission-page-label">tabs</div>
-      </div>
-    </div>`;
-}
-
-
-/* ----------------------------------------------------------------
    DEFERRED TABS — "Saved for Later" checklist column
 
    Fetches deferred tabs from the server and renders:
@@ -1076,7 +727,7 @@ function renderArchiveItem(item) {
 /* ----------------------------------------------------------------
    MAIN DASHBOARD RENDERER
 
-   renderStaticDashboard() — groups open tabs by domain.
+   renderStaticDashboard() — renders the saved-for-later view.
    ---------------------------------------------------------------- */
 
 /**
@@ -1084,10 +735,7 @@ function renderArchiveItem(item) {
  *
  * The main view. Loads instantly:
  * 1. Paint greeting + date
- * 2. Fetch open tabs from the extension
- * 3. Group tabs by domain (with landing pages pulled out)
- * 4. Render domain cards
- * 5. Update footer stats
+ * 2. Render the saved-for-later column
  */
 async function renderStaticDashboard() {
   // --- Header: greeting + date ---
@@ -1096,120 +744,7 @@ async function renderStaticDashboard() {
   if (greetingEl) greetingEl.textContent = getGreeting();
   if (dateEl)     dateEl.textContent     = getDateDisplay();
 
-  // ── Step 1: Fetch open tabs ───────────────────────────────────────────────
-  await fetchOpenTabs();
-  const realTabs = getRealTabs();
-
-  // ── Step 3: Group open tabs by domain ────────────────────────────────────
-  // This is pure JavaScript — no AI, no API calls. We extract the hostname
-  // from each tab URL and group them together.
-  //
-  // Special case: "landing pages" — homepages / inboxes / feeds that you
-  // keep open out of habit. These get pulled into their own group so you
-  // can close them all at once instead of hunting across domain cards.
-  // Landing pages are homepages, inboxes, and feeds. A specific email thread
-  // or a specific tweet is NOT a landing page — those belong with their domain.
-  const LANDING_PAGE_PATTERNS = [
-    { hostname: 'mail.google.com',  test: (p, h) => {
-      // Only the inbox itself, not individual emails.
-      // Gmail inbox URLs end with #inbox (no message ID after it)
-      // Individual emails look like #inbox/FMfcgz...
-      return !h.includes('#inbox/') && !h.includes('#sent/') && !h.includes('#search/');
-    }},
-    { hostname: 'x.com',                       pathExact: ['/home'] },
-    { hostname: 'www.linkedin.com',            pathExact: ['/'] },
-    { hostname: 'github.com',                  pathExact: ['/'] },
-    { hostname: 'www.youtube.com',             pathExact: ['/'] },
-  ];
-
-  function isLandingPage(url) {
-    try {
-      const parsed = new URL(url);
-      return LANDING_PAGE_PATTERNS.some(p => {
-        if (parsed.hostname !== p.hostname) return false;
-        if (p.test)       return p.test(parsed.pathname, url);
-        if (p.pathPrefix) return parsed.pathname.startsWith(p.pathPrefix);
-        if (p.pathExact)  return p.pathExact.includes(parsed.pathname);
-        return parsed.pathname === '/';
-      });
-    } catch { return false; }
-  }
-
-  domainGroups = [];
-  const groupMap = {};
-  const landingTabs = [];
-
-  for (const tab of realTabs) {
-    try {
-      // Check if this tab is a landing page first
-      if (isLandingPage(tab.url)) {
-        landingTabs.push(tab);
-        continue;
-      }
-
-      // file:// URLs have no hostname — group them under "Local Files"
-      let hostname;
-      if (tab.url && tab.url.startsWith('file://')) {
-        hostname = 'local-files';
-      } else {
-        hostname = new URL(tab.url).hostname;
-      }
-      if (!hostname) continue; // skip if still empty
-      if (!groupMap[hostname]) {
-        groupMap[hostname] = { domain: hostname, tabs: [] };
-      }
-      groupMap[hostname].tabs.push(tab);
-    } catch {
-      // Skip malformed URLs
-    }
-  }
-
-  // Add landing pages as a special group at the end (if any)
-  if (landingTabs.length > 0) {
-    groupMap['__landing-pages__'] = { domain: '__landing-pages__', tabs: landingTabs };
-  }
-
-  // Sort groups: landing pages first, then domains from landing page sites
-  // (e.g. x.com, mail.google.com) so they're easy to close, then the rest
-  // sorted by tab count.
-  const landingHostnames = new Set(LANDING_PAGE_PATTERNS.map(p => p.hostname));
-  domainGroups = Object.values(groupMap).sort((a, b) => {
-    const aIsLanding = a.domain === '__landing-pages__';
-    const bIsLanding = b.domain === '__landing-pages__';
-    if (aIsLanding !== bIsLanding) return aIsLanding ? -1 : 1;
-
-    const aIsPriority = landingHostnames.has(a.domain);
-    const bIsPriority = landingHostnames.has(b.domain);
-    if (aIsPriority !== bIsPriority) return aIsPriority ? -1 : 1;
-
-    return b.tabs.length - a.tabs.length;
-  });
-
-  // ── Step 4: Render domain cards ───────────────────────────────────────────
-  const openTabsSection      = document.getElementById('openTabsSection');
-  const openTabsMissionsEl   = document.getElementById('openTabsMissions');
-  const openTabsSectionCount = document.getElementById('openTabsSectionCount');
-  const openTabsSectionTitle = document.getElementById('openTabsSectionTitle');
-
-  if (domainGroups.length > 0 && openTabsSection) {
-    if (openTabsSectionTitle) openTabsSectionTitle.textContent = 'Open tabs';
-    openTabsSectionCount.innerHTML = `${domainGroups.length} domain${domainGroups.length !== 1 ? 's' : ''} &nbsp;&middot;&nbsp; <button class="action-btn close-tabs" data-action="close-all-open-tabs" style="font-size:11px;padding:3px 10px;">${ICONS.close} Close all ${realTabs.length} tabs</button>`;
-    openTabsMissionsEl.innerHTML = domainGroups
-      .map((g, idx) => renderDomainCard(g, idx))
-      .join('');
-    openTabsSection.style.display = 'block';
-  } else if (openTabsSection) {
-    openTabsSection.style.display = 'none';
-  }
-
-  // ── Footer stats ──────────────────────────────────────────────────────────
-  const statTabs = document.getElementById('statTabs');
-  if (statTabs) statTabs.textContent = openTabs.length;
-
-  // ── Check for duplicate Tab Out tabs ────────────────────────────────────
-  checkTabOutDupes();
-
-  // ── Step 9: Render the "Saved for Later" checklist column ────────────────
+  // Render the "Saved for Later" checklist column
   await renderDeferredColumn();
 }
 
@@ -1236,94 +771,13 @@ async function renderDashboard() {
    ---------------------------------------------------------------- */
 
 document.addEventListener('click', async (e) => {
-  // Walk up the DOM from the clicked element to find the nearest
-  // element with a data-action attribute
   const actionEl = e.target.closest('[data-action]');
+  if (!actionEl) return;
 
-  if (!actionEl) return; // click wasn't on an action button
-
-  const action    = actionEl.dataset.action;
-  const missionId = actionEl.dataset.missionId;
-
-  // --- Close duplicate Tab Out tabs ---
-  if (action === 'close-tabout-dupes') {
-    await sendToExtension('closeTabOutDupes');
-    await fetchOpenTabs();
-    playCloseSound();
-    const banner = document.getElementById('tabOutDupeBanner');
-    if (banner) {
-      banner.style.transition = 'opacity 0.4s';
-      banner.style.opacity = '0';
-      setTimeout(() => { banner.style.display = 'none'; banner.style.opacity = '1'; }, 400);
-    }
-    showToast('Closed extra Tab Out tabs');
-    return;
-  }
-
-  // Find the card element so we can animate it
-  const card = actionEl.closest('.mission-card');
-
-  // ---- expand-chips: show the hidden tabs in a card ----
-  if (action === 'expand-chips') {
-    const overflowContainer = actionEl.parentElement.querySelector('.page-chips-overflow');
-    if (overflowContainer) {
-      overflowContainer.style.display = 'contents';
-      actionEl.remove();
-    }
-    return;
-  }
-
-  // ---- focus-tab: switch to a specific open tab ----
-  if (action === 'focus-tab') {
-    const tabUrl = actionEl.dataset.tabUrl;
-    if (tabUrl) {
-      await sendToExtension('focusTab', { url: tabUrl });
-    }
-    return;
-  }
-
-  // ---- close-single-tab: close one specific tab by URL ----
-  if (action === 'close-single-tab') {
-    e.stopPropagation(); // don't trigger the parent chip's focus-tab
-    const tabUrl = actionEl.dataset.tabUrl;
-    if (!tabUrl) return;
-
-    await sendToExtension('closeTabs', { urls: [tabUrl] });
-    playCloseSound();
-    await fetchOpenTabs();
-
-    // Remove the chip from the DOM with confetti
-    const chip = actionEl.closest('.page-chip');
-    if (chip) {
-      const rect = chip.getBoundingClientRect();
-      shootConfetti(rect.left + rect.width / 2, rect.top + rect.height / 2);
-      chip.style.transition = 'opacity 0.2s, transform 0.2s';
-      chip.style.opacity = '0';
-      chip.style.transform = 'scale(0.8)';
-      setTimeout(() => {
-        chip.remove();
-        // If this was the last tab in the card, remove the whole card
-        const card = document.querySelector(`.mission-card:has(.mission-pages:empty)`);
-        if (card) {
-          animateCardOut(card);
-        }
-        // Also check for cards where only overflow/non-tab chips remain
-        document.querySelectorAll('.mission-card').forEach(c => {
-          const remainingTabs = c.querySelectorAll('.page-chip[data-action="focus-tab"]');
-          if (remainingTabs.length === 0) {
-            animateCardOut(c);
-          }
-        });
-      }, 200);
-    }
-
-    showToast('Tab closed');
-    return;
-  }
+  const action = actionEl.dataset.action;
 
   // ---- defer-single-tab: save one tab for later, then close it ----
   if (action === 'defer-single-tab') {
-    e.stopPropagation(); // don't trigger the parent chip's focus-tab
     const tabUrl   = actionEl.dataset.tabUrl;
     const tabTitle = actionEl.dataset.tabTitle || tabUrl;
     if (!tabUrl) return;
@@ -1339,19 +793,6 @@ document.addEventListener('click', async (e) => {
       console.error('[tab-out] Failed to defer tab:', err);
       showToast('Failed to save tab');
       return;
-    }
-
-    // Close the tab in the browser
-    await sendToExtension('closeTabs', { urls: [tabUrl] });
-    await fetchOpenTabs();
-
-    // Animate the chip out
-    const chip = actionEl.closest('.page-chip');
-    if (chip) {
-      chip.style.transition = 'opacity 0.2s, transform 0.2s';
-      chip.style.opacity = '0';
-      chip.style.transform = 'scale(0.8)';
-      setTimeout(() => chip.remove(), 200);
     }
 
     showToast('Saved for later');
@@ -1417,197 +858,6 @@ document.addEventListener('click', async (e) => {
       }, 300);
     }
     return;
-  }
-
-  // ---- close-domain-tabs: close all tabs in a static domain group ----
-  if (action === 'close-domain-tabs') {
-    const domainId = actionEl.dataset.domainId;
-    // Find the group by its stable ID
-    const group = domainGroups.find(g => {
-      const id = 'domain-' + g.domain.replace(/[^a-z0-9]/g, '-');
-      return id === domainId;
-    });
-    if (!group) return;
-
-    const urls = group.tabs.map(t => t.url);
-    // Use exact URL matching for landing pages (share domains with content tabs)
-    const useExact = group.domain === '__landing-pages__';
-    await sendToExtension('closeTabs', { urls, exact: useExact });
-    await fetchOpenTabs();
-
-    // Animate the card out
-    if (card) {
-      playCloseSound();
-      animateCardOut(card);
-    }
-
-    // Remove from in-memory domain groups
-    const idx = domainGroups.indexOf(group);
-    if (idx !== -1) domainGroups.splice(idx, 1);
-
-    const groupLabel = group.domain === '__landing-pages__' ? 'Homepages' : friendlyDomain(group.domain);
-    showToast(`Closed ${urls.length} tab${urls.length !== 1 ? 's' : ''} from ${groupLabel}`);
-
-    // Update footer tab count
-    const statTabs = document.getElementById('statTabs');
-    if (statTabs) statTabs.textContent = openTabs.length;
-    return;
-  }
-
-  // ---- close-all-dupes: close every duplicate tab ----
-
-  // ---- dedup-keep-one: close extras but keep one copy of each ----
-  if (action === 'dedup-keep-one') {
-    // URLs come from the button's data attribute (per-mission duplicates)
-    const urlsEncoded = actionEl.dataset.dupeUrls || '';
-    const urls = urlsEncoded.split(',').map(u => decodeURIComponent(u)).filter(Boolean);
-    if (urls.length === 0) return;
-
-    await sendToExtension('closeDuplicates', { urls, keepOne: true });
-    playCloseSound();
-    await fetchOpenTabs();
-
-    // Remove the dupe button
-    actionEl.style.transition = 'opacity 0.2s';
-    actionEl.style.opacity = '0';
-    setTimeout(() => actionEl.remove(), 200);
-
-    // Remove all (2x) badges and the "N duplicates" header badge from this card
-    if (card) {
-      card.querySelectorAll('.chip-dupe-badge').forEach(b => {
-        b.style.transition = 'opacity 0.2s';
-        b.style.opacity = '0';
-        setTimeout(() => b.remove(), 200);
-      });
-      // Remove the amber "N duplicates" badge from the card header
-      card.querySelectorAll('.open-tabs-badge').forEach(badge => {
-        if (badge.textContent.includes('duplicate')) {
-          badge.style.transition = 'opacity 0.2s';
-          badge.style.opacity = '0';
-          setTimeout(() => badge.remove(), 200);
-        }
-      });
-      // Remove amber highlight from the card border
-      card.classList.remove('has-amber-bar');
-      card.classList.add('has-neutral-bar');
-      const statusBar = card.querySelector('.status-bar');
-      if (statusBar) statusBar.style.background = '';
-    }
-
-    showToast(`Closed duplicates, kept one copy each`);
-    return;
-  }
-
-  // ---- close-all-open-tabs: close every open tab ----
-  if (action === 'close-all-open-tabs') {
-    // Use the actual openTabs list from the extension — works regardless of
-    // close all domain-grouped tabs
-    const allUrls = openTabs
-      .filter(t => t.url && !t.url.startsWith('chrome') && !t.url.startsWith('about:'))
-      .map(t => t.url);
-    await closeTabsByUrls(allUrls);
-    playCloseSound();
-
-    // Animate all cards out
-    document.querySelectorAll('#openTabsMissions .mission-card').forEach(c => {
-      shootConfetti(
-        c.getBoundingClientRect().left + c.offsetWidth / 2,
-        c.getBoundingClientRect().top + c.offsetHeight / 2
-      );
-      animateCardOut(c);
-    });
-
-    showToast('All tabs closed. Fresh start.');
-    return;
-  }
-
-  // ---- archive: close tabs + mark mission as archived, then remove card ----
-  else if (action === 'archive') {
-    const mission = await fetchMissionById(missionId);
-    if (!mission) return;
-
-    const urls = (mission.urls || []).map(u => u.url);
-    await closeTabsByUrls(urls);
-
-    // Tell the server to archive this mission
-    try {
-      await fetch(`/api/missions/${missionId}/archive`, { method: 'POST' });
-    } catch (err) {
-      console.warn('[tab-out] Could not archive mission:', err);
-    }
-
-    // Animate the card out
-    if (card) {
-      playCloseSound();
-      animateCardOut(card);
-    }
-
-    showToast(`Archived "${mission.name}"`);
-
-  }
-
-  // ---- dismiss: close tabs (if any), mark as dismissed, remove card ----
-  else if (action === 'dismiss') {
-    const mission = await fetchMissionById(missionId);
-    if (!mission) return;
-
-    // If tabs are open, close them first
-    const tabCount = card
-      ? (card.querySelector('.open-tabs-badge')?.textContent.match(/\d+/)?.[0] || 0)
-      : 0;
-
-    if (parseInt(tabCount) > 0) {
-      const urls = (mission.urls || []).map(u => u.url);
-      await closeTabsByUrls(urls);
-    }
-
-    // Tell the server this mission is dismissed
-    try {
-      await fetch(`/api/missions/${missionId}/dismiss`, { method: 'POST' });
-    } catch (err) {
-      console.warn('[tab-out] Could not dismiss mission:', err);
-    }
-
-    // Animate the card out
-    if (card) {
-      playCloseSound();
-      animateCardOut(card);
-    }
-
-    showToast(`Let go of "${mission.name}"`);
-
-  }
-
-  // ---- focus: bring the mission's tabs to the front ----
-  else if (action === 'focus') {
-    const mission = await fetchMissionById(missionId);
-    if (!mission) return;
-
-    const urls = (mission.urls || []).map(u => u.url);
-    await focusTabsByUrls(urls);
-    showToast(`Focused on "${mission.name}"`);
-  }
-
-  // ---- close-uncat: close uncategorized tabs by domain ----
-  else if (action === 'close-uncat') {
-    const domain = actionEl.dataset.domain;
-    if (!domain) return;
-
-    // Find all open tabs matching this domain and close them
-    const tabsToClose = openTabs.filter(t => {
-      try { return new URL(t.url).hostname === domain; }
-      catch { return false; }
-    });
-    const urls = tabsToClose.map(t => t.url);
-    await closeTabsByUrls(urls);
-
-    // Animate card removal
-    if (card) {
-      playCloseSound();
-      animateCardOut(card);
-    }
-    showToast(`Closed ${tabsToClose.length} tab${tabsToClose.length !== 1 ? 's' : ''} from ${domain}`);
-
   }
 });
 
@@ -1677,27 +927,6 @@ async function fetchMissionById(missionId) {
 }
 
 /* ----------------------------------------------------------------
-   UPDATE NOTIFICATION (read-only, no code execution)
-   ---------------------------------------------------------------- */
-async function checkForUpdates() {
-  try {
-    const res = await fetch('/api/update-status');
-    if (!res.ok) return;
-    const { updateAvailable } = await res.json();
-    if (!updateAvailable) return;
-
-    // Show a simple text notification in the footer
-    const footer = document.querySelector('footer');
-    if (!footer) return;
-    const notice = document.createElement('div');
-    notice.style.cssText = 'text-align:center; padding:8px; font-size:12px; color:var(--muted);';
-    notice.innerHTML = 'A new version of Tab Out is available. Run <code style="background:var(--warm-gray);padding:2px 6px;border-radius:3px;font-size:11px;user-select:all;cursor:pointer;" title="Click to select">git pull</code> to update.';
-    footer.after(notice);
-  } catch {}
-}
-
-/* ----------------------------------------------------------------
    INITIALIZE
    ---------------------------------------------------------------- */
 renderDashboard();
-checkForUpdates();

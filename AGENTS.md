@@ -8,15 +8,11 @@ You're installing **Tab Out** for the user. Your job is not just to set it up --
 
 Before doing anything technical, tell the user what they're about to get. Say something like:
 
-> **Tab Out** replaces your new tab page with a clean dashboard that shows everything you have open -- grouped by domain, with landing pages pulled into their own group for easy cleanup.
+> **Tab Out** replaces your new tab page with a clean dashboard for saving tabs for later. It starts as a checklist, keeps archived items nearby, and stays local to your machine.
 >
 > Here's what makes it great:
-> - **See all your open tabs at a glance** -- grouped by domain, no scrolling through 30+ tiny tabs
-> - **Landing pages group** -- homepages and feeds (Gmail, X, LinkedIn, GitHub, YouTube) are grouped into one card you can close with one click
-> - **Close tabs with style** -- satisfying swoosh sound + confetti burst when you clean up a group. Makes tab cleanup feel like a reward, not a chore.
-> - **Duplicate detection** -- flags when you have the same page open twice (we've all been there)
-> - **Click any tab title to jump to it** -- even across different Chrome windows
 > - **Save for later** -- bookmark individual tabs to a checklist before closing them
+> - **Active checklist + archive** -- keep current items on screen and tuck older ones away for later
 > - **100% local** -- your browsing data never leaves your machine. No AI, no external API calls.
 > - **Always on** -- starts automatically when you log in, runs silently in the background
 >
@@ -107,11 +103,10 @@ Once the dashboard loads, walk them through the experience:
 
 > You're all set! Here's how to use Tab Out:
 >
-> 1. **Open a new tab** -- you'll see your open tabs grouped by domain, with landing pages (Gmail, X, etc.) at the top.
-> 2. **Click any tab title** to jump directly to that tab (no new tab opened).
-> 3. **Click "Close all N tabs"** on any group to clean up -- you'll hear a swoosh and see confetti.
-> 4. **Duplicate tabs** are flagged with an amber badge. Click "Close duplicates" to keep just one copy.
-> 5. **Save individual tabs for later** by clicking the bookmark icon before closing.
+> 1. **Open a new tab** -- you'll see your saved-for-later checklist.
+> 2. **Save individual tabs for later** by clicking the bookmark icon before closing them.
+> 3. **Check items off** or dismiss them as you work through your list.
+> 4. **Open the archive** when you want to look back at older saved tabs.
 >
 > The server runs automatically in the background -- you never need to start it again. Every new tab is now your dashboard.
 

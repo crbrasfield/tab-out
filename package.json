@@ -1,7 +1,7 @@
 {
   "name": "tab-out",
   "version": "1.0.0",
-  "description": "Keep tabs on your tabs -- new tab page that groups your open tabs by domain and lets you close them with style",
+  "description": "A local new tab page for saving tabs for later and managing deferred reading lists",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server/index.js",
